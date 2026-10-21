@@ -1,5 +1,6 @@
 import { Icon } from "@opencode/ui/icon"
 import { Menu } from "@opencode/ui/menu"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import { getFilename } from "@opencode/util/path"
 import { createMemo, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -86,7 +87,12 @@ export function WorkspaceSubmenu(props: {
               />
             </div>
           </Show>
-          <div ref={list} data-slot="workspace-submenu-list" class="min-h-0 overflow-y-auto overscroll-contain">
+          <ScrollView
+            focusable={false}
+            viewportRef={(el) => (list = el)}
+            data-slot="workspace-submenu-list"
+            class="[&_[data-scrollable]]:overscroll-contain"
+          >
             <For each={directories()}>
               {(directory) => (
                 <Menu.Item disabled={props.disabled} onSelect={() => props.onSelect(directory)}>
@@ -103,7 +109,7 @@ export function WorkspaceSubmenu(props: {
                 {language.t("session.new.workspace.search.empty")}
               </div>
             </Show>
-          </div>
+          </ScrollView>
           <Show when={props.onViewAll}>
             <Menu.Separator class="h-[0.5px] shrink-0" />
             <Menu.Item onSelect={() => props.onViewAll?.()}>
