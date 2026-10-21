@@ -18,7 +18,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Predicate, Schema } from "effect"
 import stripAnsi from "strip-ansi"
 import { createTwoFilesPatch, diffLines } from "diff"
 import { Dynamic } from "solid-js/web"
@@ -28,6 +28,7 @@ import { type UiI18n, useI18n } from "@opencode/ui/context/i18n"
 import { BasicTool, GenericTool } from "../components/basic-tool"
 import { FileIcon } from "@opencode/ui/file-icon"
 import { Icon } from "@opencode/ui/icon"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import { ToolErrorCard } from "../components/tool-error-card"
 import { DiffChanges } from "@opencode/ui/diff-changes"
 import { Markdown } from "../components/markdown"
@@ -1871,13 +1872,7 @@ ToolRegistry.register({
 
     const openDetails = () =>
       dialog.show(() => (
-        <ExecuteDetails
-          code={code()}
-          output={output()}
-          error={error()}
-          calls={calls().length}
-          status={props.status}
-        />
+        <ExecuteDetails code={code()} output={output()} error={error()} calls={calls().length} status={props.status} />
       ))
 
     return (
@@ -1894,7 +1889,9 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={i18n.t("ui.tool.execute")} active={pending()} />
               </span>
-              <Show when={!open() && subtitle()}>{(text) => <ShellSubmessage text={text()} animate={sawPending} />}</Show>
+              <Show when={!open() && subtitle()}>
+                {(text) => <ShellSubmessage text={text()} animate={sawPending} />}
+              </Show>
             </div>
           </div>
         )}
@@ -1947,59 +1944,61 @@ function ExecuteDetails(props: { code: string; output: string; error?: string; c
           <span data-slot="execute-details-meta">{i18n.plural("ui.tool.execute.calls", props.calls)}</span>
         </div>
       </DialogHeader>
-      <DialogBody class="min-h-0 flex-none overflow-y-auto">
-        <div data-component="execute-details">
-          <ExecuteDetailsSection
-            label={i18n.t("ui.tool.execute.code")}
-            meta={lines(props.code)}
-            copy={props.code}
-            copyLabel={i18n.t("ui.tool.execute.copyCode")}
-          >
-            <Dynamic
-              component={fileComponent}
-              mode="text"
-              file={{ name: "execute.js", contents: props.code, cacheKey: checksum(props.code) }}
-              overflow="scroll"
-            />
-          </ExecuteDetailsSection>
-          <Show
-            when={props.error}
-            fallback={
-              <Show when={props.output}>
-                {(output) => (
-                  <ExecuteDetailsSection
-                    label={i18n.t("ui.tool.execute.output")}
-                    meta={lines(output())}
-                    copy={output()}
-                    copyLabel={i18n.t("ui.tool.execute.copyOutput")}
-                  >
-                    <Dynamic
-                      component={fileComponent}
-                      mode="text"
-                      file={{
-                        // Code Mode returns structured results as JSON; highlight those, leave anything else plain.
-                        name: Option.isSome(decodeJson(output())) ? "output.json" : "output.txt",
-                        contents: output(),
-                        cacheKey: checksum(output()),
-                      }}
-                      overflow="scroll"
-                    />
-                  </ExecuteDetailsSection>
-                )}
-              </Show>
-            }
-          >
-            {(error) => (
-              <ExecuteDetailsSection
-                label={i18n.t("ui.tool.execute.error")}
-                copy={error()}
-                copyLabel={i18n.t("ui.toolErrorCard.copyError")}
-              >
-                <pre data-slot="execute-details-error">{error()}</pre>
-              </ExecuteDetailsSection>
-            )}
-          </Show>
-        </div>
+      <DialogBody class="min-h-0 flex-none">
+        <ScrollView>
+          <div data-component="execute-details">
+            <ExecuteDetailsSection
+              label={i18n.t("ui.tool.execute.code")}
+              meta={lines(props.code)}
+              copy={props.code}
+              copyLabel={i18n.t("ui.tool.execute.copyCode")}
+            >
+              <Dynamic
+                component={fileComponent}
+                mode="text"
+                file={{ name: "execute.js", contents: props.code, cacheKey: checksum(props.code) }}
+                overflow="scroll"
+              />
+            </ExecuteDetailsSection>
+            <Show
+              when={props.error}
+              fallback={
+                <Show when={props.output}>
+                  {(output) => (
+                    <ExecuteDetailsSection
+                      label={i18n.t("ui.tool.execute.output")}
+                      meta={lines(output())}
+                      copy={output()}
+                      copyLabel={i18n.t("ui.tool.execute.copyOutput")}
+                    >
+                      <Dynamic
+                        component={fileComponent}
+                        mode="text"
+                        file={{
+                          // Code Mode returns structured results as JSON; highlight those, leave anything else plain.
+                          name: Option.isSome(decodeJson(output())) ? "output.json" : "output.txt",
+                          contents: output(),
+                          cacheKey: checksum(output()),
+                        }}
+                        overflow="scroll"
+                      />
+                    </ExecuteDetailsSection>
+                  )}
+                </Show>
+              }
+            >
+              {(error) => (
+                <ExecuteDetailsSection
+                  label={i18n.t("ui.tool.execute.error")}
+                  copy={error()}
+                  copyLabel={i18n.t("ui.toolErrorCard.copyError")}
+                >
+                  <pre data-slot="execute-details-error">{error()}</pre>
+                </ExecuteDetailsSection>
+              )}
+            </Show>
+          </div>
+        </ScrollView>
       </DialogBody>
     </Dialog>
   )
@@ -2146,7 +2145,7 @@ function ExecuteCallRow(props: { call?: ExecuteToolCall; error?: string }) {
               {([key, value]) => (
                 <div data-slot="execute-tool-call-input-entry">
                   <dt>{key}:</dt>
-                  <dd>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</dd>
+                  <dd>{Predicate.isString(value) ? value : JSON.stringify(value, null, 2)}</dd>
                 </div>
               )}
             </For>
