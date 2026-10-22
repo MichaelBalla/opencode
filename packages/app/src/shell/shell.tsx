@@ -67,6 +67,7 @@ export default function Layout(props: ParentProps) {
     closed: preferences.appearance.sidebarOpen() ? 0 : 1,
     peek: undefined,
   }
+
   let peekSurface: HTMLDivElement | undefined
   let peekHome: HTMLElement | null | undefined
 
