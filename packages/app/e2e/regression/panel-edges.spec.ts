@@ -58,8 +58,8 @@ test("the content beside a panel follows the panel's edge on every frame of a to
   const review = page.locator('[data-slot="session-review-toggle"] button')
 
   const runs = [
-    { toggle: sidebar, before: '[data-slot="vertical-tabs-sidebar"] > div > div', after: "main", gap: 0 },
-    { toggle: sidebar, before: '[data-slot="vertical-tabs-sidebar"] > div > div', after: "main", gap: 0 },
+    { toggle: sidebar, before: '[data-slot="vertical-tabs-mount"]', after: "main", gap: 0 },
+    { toggle: sidebar, before: '[data-slot="vertical-tabs-mount"]', after: "main", gap: 0 },
     { toggle: review, before: '[data-slot="session-chat-panel"]', after: "#review-panel", gap: 8 },
     { toggle: review, before: '[data-slot="session-chat-panel"]', after: "#review-panel", gap: 8 },
   ]
