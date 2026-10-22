@@ -36,17 +36,11 @@ const spring = motionTuning.spring("sidebars.preview", {
   },
 })
 
-// In the vertical strip, a preview that closes stays behind as a stand-in. If the next tab's preview opens within a
-// couple of frames, the stand-in and the new card travel together from the old place to the new tab while the new text
-// fades in over the old; otherwise the stand-in goes, as a closed preview does.
+// In the vertical strip, the next tab's preview starts where the last one was and glides to its own row, so moving
+// down the tabs reads as one card following the cursor.
 const glide: Glide = {
-  left: 0,
-  // The stand-in's visual top, and the new card's laid-out top once its positioner has placed it.
-  top: 0,
-  base: Number.NaN,
-  frames: 0,
+  closedAt: Number.NEGATIVE_INFINITY,
   offset: Spring.fromDuration(0, spring()),
-  fade: Spring.fromDuration(1, { duration: 0.15, bounce: 0 }),
 }
 
 export interface TabPreviewData {
@@ -66,7 +60,6 @@ export function TabPreviewPopover(props: {
   const language = useLanguage()
   const mobile = createMediaQuery("(max-width: 767px)")
   let triggerEl: HTMLDivElement | undefined
-  let card: HTMLElement | undefined
   // When opened during a rapid tab-hopping streak, this preview appears and
   // disappears instantly (no repeated enter/exit animation) — only the first,
   // "cold" preview animates. Mirrors how browsers reuse one tab tooltip.
@@ -93,14 +86,12 @@ export function TabPreviewPopover(props: {
     on(
       open,
       (now, before) => {
-        if (before && !now && card && props.orientation === "vertical" && glides()) leave(card)
+        if (before && !now && triggerEl && props.orientation === "vertical" && glides()) leave(triggerEl)
       },
       { defer: true },
     ),
   )
   onCleanup(() => {
-    if (card && (card === glide.active || card === glide.card || card === glide.from)) cancel()
-
     if (activePreview !== close) return
     activePreview = undefined
     lastClosedAt = Date.now()
@@ -141,11 +132,8 @@ export function TabPreviewPopover(props: {
             const theme = triggerEl?.closest("[data-theme]")?.getAttribute("data-theme")
 
             if (theme) el.setAttribute("data-theme", theme)
-            card = el
 
-            if (props.orientation !== "vertical" || !glides()) return
-
-            show(el)
+            if (triggerEl && props.orientation === "vertical" && glides()) show(el, triggerEl)
           }}
           data-component="session-tab-popover"
           data-instant={instant() || undefined}
@@ -174,111 +162,39 @@ export function TabPreviewPopover(props: {
   )
 }
 
-// A card opening while another is still up takes over from it at once; otherwise it takes over a stand-in left by one
-// that closed just before.
-function show(card: HTMLElement) {
-  const previous = glide.active
-  glide.active = card
-  measure(card)
+function show(card: HTMLElement, trigger: HTMLElement) {
+  const previous = glide.trigger
 
-  if (previous && previous !== card && previous.isConnected) {
-    standIn(previous)
-    claim(card)
+  // The last card may still be up (the next one usually opens first) or have closed a moment ago.
+  const handover =
+    previous !== undefined &&
+    previous !== trigger &&
+    previous.isConnected &&
+    (!!glide.card?.isConnected || performance.now() - glide.closedAt < 100)
 
-    return
-  }
+  Object.assign(glide, { card, trigger, closedAt: Number.NEGATIVE_INFINITY })
 
-  if (glide.ghost && !glide.card) claim(card)
+  if (!handover || prefersReducedMotion()) return glide.offset.snap(0)
+  // Starts from where the last card is, keeping the velocity of a glide already under way.
+  glide.offset.value += previous.getBoundingClientRect().top - trigger.getBoundingClientRect().top
+  glide.offset.target = 0
+  card.style.transform = `translateY(${glide.offset.value}px)`
+  glide.stop ??= frameLoop.add(step)
 }
 
-function leave(card: HTMLElement) {
-  if (card !== glide.active) return
-  glide.active = undefined
-
-  // A card closing before it was placed hands the stand-in it was taking over to the next one.
-  if (card === glide.card && Number.isNaN(glide.base)) {
-    glide.card = undefined
-    glide.frames = 0
-
-    return
-  }
-
-  standIn(card)
+function leave(trigger: HTMLElement) {
+  if (trigger !== glide.trigger) return
+  glide.card = undefined
+  glide.closedAt = performance.now()
 }
 
-function standIn(card: HTMLElement) {
-  const rect =
-    card === glide.card && glide.ghost
-      ? { left: glide.left, top: glide.top }
-      : card.isConnected
-        ? card.getBoundingClientRect()
-        : placed.get(card)
+function step(dt: number) {
+  const card = glide.card
 
-  if (!rect) return
-  glide.ghost?.remove()
-  // SAFETY: cloning an element yields an element.
-  const ghost = card.cloneNode(true) as HTMLElement
-  ghost.dataset.component = "session-tab-popover-ghost"
-  ghost.setAttribute("aria-hidden", "true")
-  ghost.removeAttribute("id")
-  ghost.removeAttribute("role")
-  Object.assign(ghost.style, { position: "fixed", left: "0", top: "0", opacity: "1" })
-  ghost.style.transform = `translate(${rect.left}px, ${rect.top}px)`
-  document.body.append(ghost)
-  Object.assign(glide, {
-    ghost,
-    from: card,
-    card: undefined,
-    left: rect.left,
-    top: rect.top,
-    base: Number.NaN,
-    frames: 0,
-  })
-  glide.stop ??= frameLoop.addMeasured(read, write)
-}
+  if (!card?.isConnected) {
+    glide.stop = undefined
 
-// Where each open card was placed. Kobalte may already have removed a closing card by the time it hands over.
-const placed = new WeakMap<HTMLElement, DOMRect>()
-
-function measure(card: HTMLElement) {
-  frameLoop.addMeasured(
-    () => {
-      if (card.parentElement?.style.transform) placed.set(card, card.getBoundingClientRect())
-    },
-    () => card.isConnected && !placed.has(card),
-  )
-}
-
-function claim(card: HTMLElement) {
-  card.style.opacity = "0"
-  glide.card = card
-  glide.base = Number.NaN
-}
-
-function read() {
-  // Kobalte's positioner gets its transform once floating-ui has placed it.
-  if (glide.card && Number.isNaN(glide.base) && glide.card.parentElement?.style.transform)
-    glide.base = glide.card.getBoundingClientRect().top
-}
-
-function write(dt: number) {
-  const ghost = glide.ghost
-
-  if (!ghost) return finish()
-
-  if (!glide.card || Number.isNaN(glide.base)) {
-    glide.frames++
-
-    return glide.frames <= (glide.card ? 6 : 2) || finish()
-  }
-
-  if (glide.frames >= 0) {
-    // Starts from where the stand-in is, keeping the velocity of a glide already under way.
-    glide.offset.value = glide.top - glide.base
-    glide.offset.target = 0
-    glide.fade.snap(0)
-    glide.fade.set(1)
-    glide.frames = -1
+    return false
   }
 
   glide.offset.omega = (2 * Math.PI) / spring().duration
@@ -286,47 +202,24 @@ function write(dt: number) {
 
   if (prefersReducedMotion()) glide.offset.snap(0)
   const offset = glide.offset.step(dt)
-  const fade = glide.fade.step(dt)
-  glide.top = glide.base + offset
-  glide.card.style.transform = `translateY(${offset}px)`
-  glide.card.style.opacity = String(fade)
-  ghost.style.transform = `translate(${glide.left}px, ${glide.top}px)`
-  // The stand-in stays opaque under the incoming text until it is half in, so the card never looks see-through.
-  ghost.style.opacity = String(Math.min(1, 2 - 2 * fade))
 
-  return !(glide.offset.resting && glide.fade.resting) || finish()
-}
+  if (!glide.offset.resting) {
+    card.style.transform = `translateY(${offset}px)`
 
-function finish() {
-  glide.card?.style.removeProperty("opacity")
-  glide.ghost?.remove()
+    return true
+  }
 
-  if (!glide.active?.isConnected) glide.active = undefined
-  Object.assign(glide, { ghost: undefined, from: undefined, card: undefined, stop: undefined })
+  card.style.removeProperty("transform")
+  glide.stop = undefined
 
   return false
 }
 
-// A tab whose preview is part of a glide went away: end the glide now rather than leave its stand-in behind.
-function cancel() {
-  glide.stop?.()
-  glide.card?.style.removeProperty("transform")
-  glide.active = undefined
-  glide.offset.snap(0)
-  finish()
-}
-
 type Glide = {
-  ghost?: HTMLElement
+  // The row whose preview is up, or closed last.
+  trigger?: HTMLElement
   card?: HTMLElement
-  left: number
-  top: number
-  base: number
-  frames: number
+  closedAt: number
   offset: Spring
-  fade: Spring
   stop?: () => void
-  active?: HTMLElement
-  // The card the stand-in was copied from.
-  from?: HTMLElement
 }

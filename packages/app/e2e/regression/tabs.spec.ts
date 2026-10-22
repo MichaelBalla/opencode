@@ -739,13 +739,27 @@ test("tab preview opens cold, switches immediately between tabs, and closes outs
   await page.clock.runFor(50)
   await expect(preview).toContainText(c.title)
 
-  // Closing the tab a preview is gliding to ends the glide; its stand-in does not outlive the tab.
+  // Closing the tab a preview is gliding to stops the glide: no more frames are requested for it.
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame
+    document.documentElement.dataset.frames = "0"
+    window.requestAnimationFrame = (callback) => {
+      document.documentElement.dataset.frames = String(Number(document.documentElement.dataset.frames) + 1)
+
+      return request(callback)
+    }
+  })
+  const frames = () => page.evaluate(() => Number(document.documentElement.dataset.frames))
   const tabD = rows.filter({ has: page.locator(`a[href="${sessionHref(d.id)}"]`) })
   await tabD.hover()
   await page.clock.runFor(20)
-  await expect(page.locator('[data-component="session-tab-popover-ghost"]')).toHaveCount(1)
+  await expect(preview).toContainText(d.title)
+  expect(await frames()).toBeGreaterThan(0)
   await tabD.getByRole("button", { name: "Close tab", exact: true }).click()
-  await expect(page.locator('[data-component="session-tab-popover-ghost"]')).toHaveCount(0)
+  await page.clock.runFor(50)
+  const settled = await frames()
+  await page.clock.runFor(200)
+  expect(await frames()).toBe(settled)
 })
 
 test("closing the active server's last tab opens the remaining server tab", async ({ page }) => {
