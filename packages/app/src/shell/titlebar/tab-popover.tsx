@@ -20,15 +20,19 @@ let lastClosedAt = 0
 
 let activePreview: (() => void) | undefined
 
-const glides = motionTuning.toggle("sidebars.preview.glide", {
-  label: "Tab preview glides",
-  group: "Sidebars",
-  value: true,
+const style = motionTuning.choice("sidebars.preview.style", {
+  label: "Style",
+  group: "Experiments",
+  card: "Sidebar hover",
+  value: "glide",
+  labels: { today: "Today", glide: "Glide", cursor: "Follow cursor" },
 })
 
 const spring = motionTuning.spring("sidebars.preview", {
-  label: "Tab preview glide",
-  group: "Sidebars",
+  label: "Glide",
+  group: "Experiments",
+  card: "Sidebar hover",
+  when: () => style() !== "today",
   presets: {
     snappy: { duration: 0.2, bounce: 0 },
     smooth: { duration: 0.28, bounce: 0 },
@@ -36,12 +40,19 @@ const spring = motionTuning.spring("sidebars.preview", {
   },
 })
 
+const glides = () => style() !== "today"
+
 // In the vertical strip, the next tab's preview starts where the last one was and glides to its own row, so moving
-// down the tabs reads as one card following the cursor.
+// down the tabs reads as one card following the cursor. "Follow cursor" glides to the pointer's height instead.
 const glide: Glide = {
   closedAt: Number.NEGATIVE_INFINITY,
   offset: Spring.fromDuration(0, spring()),
+  pointerY: 0,
 }
+
+// Scrolling moves the rows under the cached rects, so measure again on the next pointer move.
+if (typeof window !== "undefined")
+  window.addEventListener("scroll", () => (glide.rects = undefined), { capture: true, passive: true })
 
 export interface TabPreviewData {
   projectName?: string
@@ -123,7 +134,16 @@ export function TabPreviewPopover(props: {
       placement={placement()}
       gutter={6}
     >
-      <HoverCard.Trigger ref={triggerEl} as="div" data-component="session-tab-popover-trigger" tabIndex={-1}>
+      <HoverCard.Trigger
+        ref={triggerEl}
+        as="div"
+        data-component="session-tab-popover-trigger"
+        tabIndex={-1}
+        onPointerMove={(event: PointerEvent) => {
+          glide.pointerY = event.clientY
+          if (props.orientation === "vertical" && style() === "cursor" && triggerEl === glide.trigger) follow()
+        }}
+      >
         {props.trigger}
       </HoverCard.Trigger>
       <HoverCard.Portal>
@@ -174,14 +194,46 @@ function show(card: HTMLElement, trigger: HTMLElement) {
     previous.isConnected &&
     (!!glide.card?.isConnected || performance.now() - glide.closedAt < 100)
 
-  Object.assign(glide, { card, trigger, closedAt: Number.NEGATIVE_INFINITY })
+  Object.assign(glide, { card, trigger, closedAt: Number.NEGATIVE_INFINITY, rects: undefined })
 
-  if (!handover || prefersReducedMotion()) return glide.offset.snap(0)
+  if (prefersReducedMotion()) return glide.offset.snap(0)
+  const cursor = style() === "cursor"
+
+  if (!handover && !cursor) return glide.offset.snap(0)
   // Starts from where the last card is, keeping the velocity of a glide already under way.
-  glide.offset.value += previous.getBoundingClientRect().top - trigger.getBoundingClientRect().top
-  glide.offset.target = 0
+  if (handover) glide.offset.value += previous.getBoundingClientRect().top - trigger.getBoundingClientRect().top
+  glide.offset.target = cursor ? cursorOffset() : 0
+
+  if (!handover) glide.offset.snap(glide.offset.target)
   card.style.transform = `translateY(${glide.offset.value}px)`
   glide.stop ??= frameLoop.add(step)
+}
+
+function follow() {
+  if (!glide.card?.isConnected || prefersReducedMotion()) return
+  glide.offset.target = cursorOffset()
+  glide.stop ??= frameLoop.add(step)
+}
+
+// Keeps the pointer level with the middle of the row-sized slot the card would sit in by default, so the offset is 0
+// at the row's centre and runs continuously across row boundaries, clamped to the sidebar.
+function cursorOffset() {
+  const rects = glide.rects ?? measure()
+
+  if (!rects) return 0
+  // The card has no height until it's attached, so a measurement taken as it mounts isn't kept.
+  if (rects.card > 0) glide.rects = rects
+  const top = glide.pointerY - rects.row.height / 2
+  const clamped = Math.min(Math.max(top, rects.bounds.top), rects.bounds.bottom - rects.card)
+
+  return clamped - rects.row.top
+}
+
+function measure() {
+  if (!glide.trigger || !glide.card) return
+  const bounds = (glide.trigger.closest('[data-slot="vertical-tabs"]') ?? glide.trigger).getBoundingClientRect()
+
+  return { row: glide.trigger.getBoundingClientRect(), bounds, card: glide.card.offsetHeight }
 }
 
 function leave(trigger: HTMLElement) {
@@ -202,6 +254,8 @@ function step(dt: number) {
   glide.offset.omega = (2 * Math.PI) / spring().duration
   glide.offset.zeta = 1 - spring().bounce
 
+  if (style() === "cursor" && !glide.rects) glide.offset.target = cursorOffset()
+
   if (prefersReducedMotion()) glide.offset.snap(0)
   const offset = glide.offset.step(dt)
 
@@ -211,7 +265,8 @@ function step(dt: number) {
     return true
   }
 
-  card.style.removeProperty("transform")
+  if (offset === 0) card.style.removeProperty("transform")
+  else card.style.transform = `translateY(${offset}px)`
   glide.stop = undefined
 
   return false
@@ -224,4 +279,7 @@ type Glide = {
   closedAt: number
   offset: Spring
   stop?: () => void
+  // The last pointer height over a row, and the rects "Follow cursor" clamps against, measured once per card.
+  pointerY: number
+  rects?: { row: DOMRect; bounds: DOMRect; card: number }
 }
