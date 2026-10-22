@@ -183,7 +183,7 @@ export function SessionLocation(props: {
         <Menu.Trigger
           data-slot="session-location-trigger"
           title={[projectName(), worktree()].filter(Boolean).join(" / ")}
-          class="flex h-6 min-w-0 max-w-[60%] shrink items-center gap-1.5 rounded-[6px] px-1 text-start text-[13px] font-[440] leading-[var(--line-height-compact)] tracking-[-0.04px] text-v2-text-text-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:text-v2-text-text-base focus-visible:outline-none data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
+          class="flex h-7 min-w-0 max-w-[60%] shrink items-center gap-1.5 rounded-[6px] px-1 text-start text-[13px] font-[440] leading-[var(--line-height-compact)] tracking-[-0.04px] text-v2-text-text-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:text-v2-text-text-base focus-visible:outline-none data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
         >
           <ProjectAvatar
             class="shrink-0"
@@ -541,7 +541,7 @@ export function SessionIdentityHeader(props: { sessionID: string; session?: Sess
               <h1
                 data-slot={parentID() ? "session-title-child" : undefined}
                 dir="auto"
-                class="w-fit truncate rounded-[6px] px-1 py-1 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base"
+                class="w-fit truncate rounded-[6px] px-1 py-1.5 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base"
                 classList={{ "max-w-[45%] shrink-0": !!parentID() }}
               >
                 {value()}

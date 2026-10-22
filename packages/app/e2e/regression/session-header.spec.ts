@@ -30,6 +30,15 @@ for (const direction of ["ltr", "rtl"] as const) {
     const titleBounds = await header.getByRole("heading").boundingBox()
     expect(titleBounds).not.toBeNull()
 
+    // Every control in the header highlights the same 28px band on hover.
+    const usage = header.getByRole("button", { name: "Toggle session context", exact: true })
+    const heights = await Promise.all(
+      [project, header.getByRole("heading"), options, usage, details, review].map(
+        async (control) => (await control.boundingBox())?.height,
+      ),
+    )
+    expect(heights).toEqual([28, 28, 28, 28, 28, 28])
+
     for (const editing of [false, true]) {
       if (editing) {
         await header.getByRole("heading").click()
@@ -231,8 +240,9 @@ test.describe("location", () => {
         await expect(header.locator(".session-location-worktree-icon")).toBeHidden()
         const location = header.locator('[data-slot="session-location-trigger"]')
         await location.hover()
-        await expect(location).toHaveCSS("padding-inline-start", "4px")
-        await expect(location).toHaveCSS("padding-inline-end", "4px")
+        await expect(location).toHaveCSS("padding-inline-start", "6px")
+        await expect(location).toHaveCSS("padding-inline-end", "6px")
+        expect(await location.boundingBox()).toMatchObject({ width: 28, height: 28 })
       }
       await header.screenshot({ path: test.info().outputPath(`location-${panel ? "compact" : "expanded"}.png`) })
     }

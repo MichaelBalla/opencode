@@ -31,16 +31,17 @@
 
   .session-header-location > [data-slot="session-location-trigger"] {
     gap: 8px;
-    padding-inline: 4px;
+    padding-inline: 6px;
   }
 
-  /* The avatar-only trigger sits 4px from its avatar on every side, and the row adds a 4px gap. */
+  /* The avatar-only trigger is square like the header's icon buttons, 6px from its avatar on every side, and the row
+     adds a 4px gap. */
   .session-header-location > .session-header-separator {
-    --separator-before: 8px;
+    --separator-before: 10px;
   }
 
   .session-header-location > .session-header-separator:dir(rtl) {
-    --separator-before: 7px;
+    --separator-before: 9px;
   }
 
   /* The collapsed header reads avatar, separator, title; the names stay in the trigger's title and accessible name. */

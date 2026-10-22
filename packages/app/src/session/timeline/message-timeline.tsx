@@ -552,7 +552,7 @@ function MessageTimelineView(
                     <h1
                       data-slot="session-title-child"
                       dir="auto"
-                      class="max-w-[45%] shrink-0 w-fit truncate rounded-[6px] px-1 py-1 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base"
+                      class="max-w-[45%] shrink-0 w-fit truncate rounded-[6px] px-1 py-1.5 text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base"
                     >
                       {value()}
                     </h1>
@@ -565,7 +565,7 @@ function MessageTimelineView(
                   fallback={
                     <h1
                       data-slot="session-title-child"
-                      class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1 hover:bg-v2-overlay-simple-overlay-hover"
+                      class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base w-fit rounded-[6px] px-1 py-1.5 hover:bg-v2-overlay-simple-overlay-hover"
                       classList={{ "max-w-[45%] shrink-0": !!parentID() }}
                       onClick={openTitleEditor}
                     >
@@ -581,7 +581,7 @@ function MessageTimelineView(
                     dir="auto"
                     value={title.draft}
                     disabled={props.pending.rename()}
-                    class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content rounded-[6px] px-1 py-1"
+                    class="block text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-base field-sizing-content rounded-[6px] px-1 py-1.5"
                     classList={{ "max-w-[45%] shrink-0": !!parentID() }}
                     style={{
                       "--inline-input-shadow": "none",
