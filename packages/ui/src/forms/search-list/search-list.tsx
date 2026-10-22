@@ -104,28 +104,48 @@ export function SearchList<T>(props: {
 
   // Rows fade out where they run under the top header or past the bottom edge. Each fade reaches full strength once
   // 15 px is hidden, so it eases in with the scroll. The top fade follows the header over the topmost section and
-  // measures what that section has hidden, so a header that pushes the last one away starts clear again.
+  // measures what that section has hidden, so a header that pushes the last one away starts clear again. Sections are
+  // measured when the list lays out, so scrolling only does arithmetic.
+  let sections: { top: number; bottom: number; header: number }[] = []
+
   const edges = () => {
     if (!viewport) return
-    const top = viewport.getBoundingClientRect().top
+    const scroll = viewport.scrollTop
     const strength = (hidden: number) => String(Math.min(1, Math.max(0, hidden / 15)))
+    const current = sections.findLast((section) => section.top - scroll < section.header)
 
-    const current = [...viewport.querySelectorAll<HTMLElement>('[data-slot="search-list-section"]')]
-      .map((section) => ({
-        section: section.getBoundingClientRect(),
-        header: section.querySelector('[data-slot="search-list-header"]')?.getBoundingClientRect(),
-      }))
-      .findLast((item) => item.section.top < top + (item.header?.height ?? 0))
+    // A stuck header sits at the top until its section's end pushes it up.
+    const offset = current?.header
+      ? Math.min(Math.max(current.top - scroll, 0) + current.header, current.bottom - scroll)
+      : 0
 
-    viewport.style.setProperty("--search-list-fade-offset", `${Math.max(0, (current?.header?.bottom ?? top) - top)}px`)
-    viewport.style.setProperty("--search-list-fade-top", strength(current ? top - current.section.top : 0))
+    viewport.style.setProperty("--search-list-fade-offset", `${Math.max(0, offset)}px`)
+    viewport.style.setProperty("--search-list-fade-top", strength(current ? scroll - current.top : 0))
     viewport.style.setProperty(
       "--search-list-fade-bottom",
-      strength(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop),
+      strength(viewport.scrollHeight - viewport.clientHeight - scroll),
     )
   }
 
-  createResizeObserver(() => [viewport, results], edges)
+  const measure = () => {
+    if (!viewport) return
+    const origin = viewport.getBoundingClientRect().top - viewport.scrollTop
+
+    sections = [...viewport.querySelectorAll<HTMLElement>('[data-slot="search-list-section"]')].map((section) => {
+      const rect = section.getBoundingClientRect()
+
+      // A sticky header stays inside its section's content box, so the section's bottom padding is out of its reach.
+      return {
+        top: rect.top - origin,
+        bottom: rect.bottom - origin - parseFloat(getComputedStyle(section).paddingBottom),
+        header: section.querySelector<HTMLElement>('[data-slot="search-list-header"]')?.offsetHeight ?? 0,
+      }
+    })
+    edges()
+  }
+
+  createResizeObserver(() => [viewport, results], measure)
+  createEffect(on(rows, measure, { defer: true }))
 
   createEffect(() => props.onActive?.(typeahead.activeItem()))
 
