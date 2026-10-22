@@ -286,6 +286,7 @@ function resourceMcpLayer(
     subscribe?: Bus.Interface["subscribe"]
     environment?: Layer.Layer<Environment.Service>
     published?: string[]
+    credentials?: Credential.Interface
   },
 ) {
   const directory = AbsolutePath.make(import.meta.dir)
@@ -347,6 +348,7 @@ function resourceMcpLayer(
         }),
         Layer.mock(Integration.Service, {
           revision: () => 0,
+          transform: () => Effect.succeed({ dispose: Effect.void }),
           connection: {
             active: unusedIntegration,
             resolve: unusedIntegration,
@@ -369,7 +371,7 @@ function resourceMcpLayer(
             cancel: unusedIntegration,
           },
         }),
-        Layer.mock(Credential.Service, {}),
+        overrides?.credentials ? Layer.succeed(Credential.Service, overrides.credentials) : Layer.mock(Credential.Service, {}),
         overrides?.environment ?? hostEnvironmentLayer,
       ),
     ),
@@ -1301,6 +1303,95 @@ const recordForm = (created: Deferred.Deferred<CreatedForm>, form: Form.Info) =>
     ),
     Effect.asVoid,
   )
+
+test("follows same-origin redirects but not redirects to another origin", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* resourceServer({ resources: false })
+        const redirect = (location: string) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              Bun.serve({
+                port: 0,
+                fetch: (request) =>
+                  new URL(request.url).pathname === "/moved"
+                    ? Response.redirect(location, 307)
+                    : fetch(new Request(server.url, request)),
+              }),
+            ),
+            (http) => Effect.promise(() => http.stop(true)),
+          )
+        const sameOrigin = yield* redirect("/")
+        const crossOrigin = yield* redirect(server.url)
+        const config = (url: URL) => new ConfigMCP.Remote({ type: "remote", url: url.toString(), oauth: false })
+
+        const followed = yield* connect("same-origin", config(new URL("/moved", sameOrigin.url)), import.meta.dir)
+        expect((yield* followed.tools()).map((tool) => tool.name)).toEqual(["echo"])
+
+        const refused = yield* connect("cross-origin", config(new URL("/moved", crossOrigin.url)), import.meta.dir).pipe(
+          Effect.flip,
+        )
+        expect(refused.message).toContain("not followed")
+      }),
+    ),
+  )
+})
+
+test("sends a configured Authorization header instead of a stored OAuth token", async () => {
+  const received: Array<string | null> = []
+  const stored = new Credential.Info({
+    id: Credential.ID.make("cred_stored"),
+    integrationID: Integration.ID.make("mcp_stored"),
+    label: "stored",
+    value: {
+      type: "oauth",
+      methodID: Integration.MethodID.make("oauth"),
+      access: "stored-token",
+      refresh: "stored-refresh",
+      expires: Date.now() + 3_600_000,
+      metadata: { tokenType: "Bearer" },
+    },
+  })
+  const credentials = Credential.Service.of({
+    all: () => Effect.succeed([stored]),
+    create: () => Effect.die("unused credential method"),
+    activate: () => Effect.die("unused credential method"),
+    list: () => Effect.succeed([stored]),
+    get: () => Effect.succeed(stored),
+    update: () => Effect.void,
+    remove: () => Effect.void,
+  })
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* resourceServer({
+          resources: false,
+          respond: (request) => {
+            received.push(request.headers.get("authorization"))
+            return undefined
+          },
+        })
+        yield* Effect.gen(function* () {
+          const service = yield* Mcp.Service
+          yield* service.callTool({ server: "resources", name: "echo" })
+        }).pipe(
+          Effect.provide(
+            resourceMcpLayer(
+              new ConfigMCP.Remote({ type: "remote", url: server.url, headers: { Authorization: "Bearer configured" } }),
+              undefined,
+              undefined,
+              { credentials },
+            ),
+          ),
+        )
+      }),
+    ),
+  )
+
+  expect(received.length).toBeGreaterThan(0)
+  expect(new Set(received)).toEqual(new Set(["Bearer configured"]))
+})
 
 test("accepts empty MCP elicitations without creating forms", async () => {
   await Effect.runPromise(

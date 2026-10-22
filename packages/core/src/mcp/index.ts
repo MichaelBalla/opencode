@@ -197,6 +197,9 @@ export const layer = (options?: Options) =>
       const owned = new Set<Integration.ID>()
       const register = Effect.fnUntraced(function* (name: ServerName, entry: ServerEntry) {
         if (entry.config.type !== "remote" || entry.config.oauth === false) return
+        // The SDK sends a stored OAuth token in place of a configured Authorization header, so a server that
+        // brings its own credential is treated as `oauth: false`.
+        if (Object.keys(entry.config.headers ?? {}).some((key) => key.toLowerCase() === "authorization")) return
         const remote = entry.config
         // Key identity on name + url, not url alone: two configs for the same url under different names are
         // distinct logical servers that may hold different accounts, so they must not share a credential row.
