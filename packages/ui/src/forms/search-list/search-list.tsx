@@ -1,4 +1,5 @@
 import { createContext, createEffect, createMemo, For, type JSX, on, onCleanup, Show, useContext } from "solid-js"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Icon } from "@opencode/ui/icon"
 import { ScrollView } from "../../components/scroll-view"
 import { TextInput } from "../text-input/text-input"
@@ -56,6 +57,7 @@ export function SearchList<T>(props: {
   children: (item: () => T, row: SearchListRow) => JSX.Element
 }) {
   let viewport: HTMLDivElement | undefined
+  let results: HTMLDivElement | undefined
 
   const sectionOf = (item: T) => props.section?.(item) ?? ""
 
@@ -99,6 +101,31 @@ export function SearchList<T>(props: {
     if (item === undefined || item === rows()[0]) return viewport.scrollTo({ top: 0 })
     document.getElementById(typeahead.optionID(item))?.scrollIntoView({ block: "nearest" })
   }
+
+  // Rows fade out where they run under the top header or past the bottom edge. Each fade reaches full strength once
+  // 15 px is hidden, so it eases in with the scroll. The top fade follows the header over the topmost section and
+  // measures what that section has hidden, so a header that pushes the last one away starts clear again.
+  const edges = () => {
+    if (!viewport) return
+    const top = viewport.getBoundingClientRect().top
+    const strength = (hidden: number) => String(Math.min(1, Math.max(0, hidden / 15)))
+
+    const current = [...viewport.querySelectorAll<HTMLElement>('[data-slot="search-list-section"]')]
+      .map((section) => ({
+        section: section.getBoundingClientRect(),
+        header: section.querySelector('[data-slot="search-list-header"]')?.getBoundingClientRect(),
+      }))
+      .findLast((item) => item.section.top < top + (item.header?.height ?? 0))
+
+    viewport.style.setProperty("--search-list-fade-offset", `${Math.max(0, (current?.header?.bottom ?? top) - top)}px`)
+    viewport.style.setProperty("--search-list-fade-top", strength(current ? top - current.section.top : 0))
+    viewport.style.setProperty(
+      "--search-list-fade-bottom",
+      strength(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop),
+    )
+  }
+
+  createResizeObserver(() => [viewport, results], edges)
 
   createEffect(() => props.onActive?.(typeahead.activeItem()))
 
@@ -202,8 +229,15 @@ export function SearchList<T>(props: {
             onKeyDown={onKeyDown}
           />
         </div>
-        <ScrollView data-slot="search-list-scroll" viewportRef={(element) => (viewport = element)}>
-          <div id={typeahead.listID} data-slot="search-list-results" role="listbox" aria-label={props.placeholder}>
+        <ScrollView data-slot="search-list-scroll" viewportRef={(element) => (viewport = element)} onScroll={edges}>
+          <div data-slot="search-list-fade" aria-hidden="true" />
+          <div
+            ref={results}
+            id={typeahead.listID}
+            data-slot="search-list-results"
+            role="listbox"
+            aria-label={props.placeholder}
+          >
             <For each={sectionKeys()}>
               {(section) => {
                 const keys = createMemo<string[]>((previous) =>
