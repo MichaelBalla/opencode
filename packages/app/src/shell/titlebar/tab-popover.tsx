@@ -92,6 +92,8 @@ export function TabPreviewPopover(props: {
     ),
   )
   onCleanup(() => {
+    if (glide.trigger === triggerEl) Object.assign(glide, { trigger: undefined, card: undefined })
+
     if (activePreview !== close) return
     activePreview = undefined
     lastClosedAt = Date.now()
@@ -192,7 +194,7 @@ function step(dt: number) {
   const card = glide.card
 
   if (!card?.isConnected) {
-    glide.stop = undefined
+    Object.assign(glide, { card: undefined, stop: undefined })
 
     return false
   }
