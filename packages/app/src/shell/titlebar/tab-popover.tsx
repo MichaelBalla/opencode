@@ -50,10 +50,6 @@ const glide: Glide = {
   pointerY: 0,
 }
 
-// Scrolling moves the rows under the cached rects, so measure again on the next pointer move.
-if (typeof window !== "undefined")
-  window.addEventListener("scroll", () => (glide.rects = undefined), { capture: true, passive: true })
-
 export interface TabPreviewData {
   projectName?: string
   title?: string
@@ -103,7 +99,10 @@ export function TabPreviewPopover(props: {
     ),
   )
   onCleanup(() => {
-    if (glide.trigger === triggerEl) Object.assign(glide, { trigger: undefined, card: undefined })
+    if (glide.trigger === triggerEl) {
+      unwatch()
+      Object.assign(glide, { trigger: undefined, card: undefined })
+    }
 
     if (activePreview !== close) return
     activePreview = undefined
@@ -195,9 +194,12 @@ function show(card: HTMLElement, trigger: HTMLElement) {
     (!!glide.card?.isConnected || performance.now() - glide.closedAt < 100)
 
   Object.assign(glide, { card, trigger, closedAt: Number.NEGATIVE_INFINITY, rects: undefined })
+  unwatch()
 
   if (prefersReducedMotion()) return glide.offset.snap(0)
   const cursor = style() === "cursor"
+
+  if (cursor) watch(trigger)
 
   if (!handover && !cursor) return glide.offset.snap(0)
   // Starts from where the last card is, keeping the velocity of a glide already under way.
@@ -236,8 +238,33 @@ function measure() {
   return { row: glide.trigger.getBoundingClientRect(), bounds, card: glide.card.offsetHeight }
 }
 
+// While a "Follow cursor" card is up, scrolling or resizing the tabs moves the rows under the cached rects, so measure
+// again and re-clamp the card even if the pointer stays still.
+function watch(trigger: HTMLElement) {
+  const refresh = () => {
+    if (style() !== "cursor") return unwatch()
+    glide.rects = undefined
+    follow()
+  }
+  const observer = new ResizeObserver(refresh)
+  observer.observe(trigger.closest('[data-slot="vertical-tabs"]') ?? trigger)
+  window.addEventListener("scroll", refresh, { capture: true, passive: true })
+  window.addEventListener("resize", refresh, { passive: true })
+  glide.unwatch = () => {
+    observer.disconnect()
+    window.removeEventListener("scroll", refresh, { capture: true })
+    window.removeEventListener("resize", refresh)
+  }
+}
+
+function unwatch() {
+  glide.unwatch?.()
+  glide.unwatch = undefined
+}
+
 function leave(trigger: HTMLElement) {
   if (trigger !== glide.trigger) return
+  unwatch()
   glide.card = undefined
   glide.closedAt = performance.now()
 }
@@ -246,6 +273,7 @@ function step(dt: number) {
   const card = glide.card
 
   if (!card?.isConnected) {
+    unwatch()
     Object.assign(glide, { card: undefined, stop: undefined })
 
     return false
@@ -282,4 +310,5 @@ type Glide = {
   // The last pointer height over a row, and the rects "Follow cursor" clamps against, measured once per card.
   pointerY: number
   rects?: { row: DOMRect; bounds: DOMRect; card: number }
+  unwatch?: () => void
 }
