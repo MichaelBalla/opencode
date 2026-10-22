@@ -11,14 +11,12 @@ import { useSettings } from "@/settings/model"
 import { motionTuning } from "@opencode/ui/motion-tuning"
 import { sidebarPeekEnabled, sidebarUnread } from "@/shell/sidebar-peek"
 
-// The Sidebar peek experiment shows the closed sidebar's toggle as a menu.
+// Whether the closed sidebar peeks, which the toggle's unread dot and tooltip follow.
 const [peek, setPeek] = createSignal(sidebarPeekEnabled())
 
 motionTuning.subscribe(() => setPeek(sidebarPeekEnabled()))
 
-const closedIcon = () => (peek() ? "menu" : "layout-left")
-
-// The menu icon's dot for sidebar sessions with unread activity, shown while the sidebar is closed.
+// The toggle's dot for sidebar sessions with unread activity, shown while the sidebar is closed.
 function UnreadBadge(props: { show: boolean; ring: "base" | "deep" }) {
   return (
     <Show when={props.show}>
@@ -57,6 +55,9 @@ const slotWidth = 32
 
 // The shell's 8px inline inset plus the session header's 10px start padding.
 const contentStart = 18
+
+/** Where the collapsed toggle's slot ends without traffic lights, in pixels from the window's start edge. */
+export const collapsedSidebarToggleEnd = contentStart + slotWidth
 
 /**
  * `handoff` makes this one of the two vertical-tabs toggles that read as one icon: "out" sits in the sidebar's header
@@ -124,14 +125,16 @@ export function SidebarToggle(props: { handoff?: "out" | "in" }) {
             <span class="relative flex">
               <Icon ref={full} name="layout-left-full" />
               <span ref={outline} class="absolute inset-0 flex">
-                <Icon name={closedIcon()} />
+                <Icon name="layout-left" />
                 <UnreadBadge show={unread()} ring="base" />
               </span>
             </span>
           ) : (
             <span class="relative flex">
               <Icon
-                name={side === "out" || (!side && settings.appearance.sidebarOpen()) ? "layout-left-full" : closedIcon()}
+                name={
+                  side === "out" || (!side && settings.appearance.sidebarOpen()) ? "layout-left-full" : "layout-left"
+                }
               />
               <UnreadBadge show={!side && unread()} ring="deep" />
             </span>
@@ -187,14 +190,14 @@ const travel: { header?: HTMLElement; toggle?: HTMLElement; x: number; y: number
 
 /**
  * Measures, in the frame loop's read phase of the sidebar's motion, how far the header toggle rests from the collapsed
- * one. The header toggle rides the sidebar's edge, `width × closed` from where it rests open.
+ * one. The header toggle rides the sidebar's contents, `offset` pixels short of where it rests open.
  */
-export function measureSidebarToggles(width: number) {
+export function measureSidebarToggles(offset: number) {
   if (!travel.header?.isConnected || !travel.toggle?.isConnected) return
   const header = travel.header.getBoundingClientRect()
   const toggle = travel.toggle.getBoundingClientRect()
   const direction = document.documentElement.dir === "rtl" ? -1 : 1
-  travel.x = header.left + direction * width * collapsed.closed - (toggle.left - travel.dx)
+  travel.x = header.left + direction * offset - (toggle.left - travel.dx)
   travel.y = header.top - (toggle.top - travel.dy)
 }
 

@@ -1,41 +1,22 @@
-/* The closed sidebar floats as a card below the session header, as tall as its rows up to the window's bottom gap,
-   without resizing its zero-width aside. */
+/* The closed sidebar peeks in the docked sidebar's own box, over the content and without resizing its zero-width aside,
+   so docking from a peek only has to move the layout. */
 [data-slot="vertical-tabs-sidebar"][data-peek] > [data-slot="vertical-tabs-panel"] {
-  /* Past the shell's 8px frame inset, so the card's edges sit inside the frame's. */
-  --sidebar-peek-gap: 12px;
-  --sidebar-peek-start: 16px;
-  /* Below the session header, which ends 48px past the shell's top inset. */
-  --sidebar-peek-top: calc(var(--shell-top-inset, 8px) + 48px + var(--sidebar-peek-gap));
-  inset: var(--sidebar-peek-top) auto auto;
-  inset-inline: var(--sidebar-peek-start) auto;
+  inset-inline-end: auto;
   width: var(--sidebar-peek-width);
-  max-height: calc(100% - var(--sidebar-peek-top) - var(--sidebar-peek-gap));
-  display: flex;
-  flex-direction: column;
   overflow: visible;
   contain: none;
 }
 
-[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="vertical-tabs-mount"] {
-  position: relative;
-  inset: auto;
-  width: 100% !important;
-  flex: 0 1 auto;
-  min-height: 0;
-  padding-block: 8px !important;
-  padding-inline: 8px 4px !important;
-  contain: layout style;
-  overflow: hidden;
-  border-radius: 12px;
-  box-shadow: var(--v2-elevation-floating);
-}
-
-/* The header only spaces the traffic lights and holds the docked toggle; Home, where it leads, stays as a row. */
-[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="sidebar-header"]:not([data-home]),
-[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="sidebar-header"] > :last-child {
+/* Backs the peek and lifts it off the content along its end edge. */
+[data-slot="vertical-tabs-peek-surface"] {
   display: none;
 }
 
-[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="sidebar-header"] {
-  padding-top: 0;
+[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="vertical-tabs-peek-surface"] {
+  display: block;
+}
+
+/* The collapsed toggle is the one in reach while the sidebar peeks; the docked one's spot stays empty. */
+[data-slot="vertical-tabs-sidebar"][data-peek] [data-slot="sidebar-header"] > :last-child {
+  visibility: hidden;
 }

@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode/ui/resize-handle"
 import { useDialog } from "@opencode/ui/context/dialog"
+import { prefersReducedMotion } from "@opencode/ui/motion"
 import { Titlebar } from "@/shell/titlebar/titlebar"
 import { usePlatform } from "@/runtime/platform/platform"
 import { ToastRegion } from "@/shell/notifications/toast"
@@ -17,10 +18,19 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useGlobal } from "@/runtime/server/runtime"
 import { useServers } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
-import { CollapsedSidebarToggle, measureSidebarToggles, paintCollapsedSlots } from "@/shell/sidebar-toggle"
+import {
+  CollapsedSidebarToggle,
+  collapsedSidebarToggleEnd,
+  measureSidebarToggles,
+  paintCollapsedSlots,
+} from "@/shell/sidebar-toggle"
 import { createPanelMotion, guardClosingFocus, panelOpacity, replayPanelToggle } from "@/shell/panel-motion"
 import { createSidebarPeek } from "@/shell/sidebar-peek"
 import { windowDragEnabled } from "@/session/header/drag-area"
+
+// How far Home steps along a peek's header to clear the collapsed toggle: to the toggle's end, from the sidebar's 10px
+// start padding.
+const homeClearance = collapsedSidebarToggleEnd - 10
 
 export const sidebarToggleCommand = { id: "sidebar.toggle", keybind: "mod+shift+b" }
 
@@ -52,20 +62,64 @@ export default function Layout(props: ParentProps) {
 
   const toggleSidebar = () => preferences.appearance.setSidebarOpen(!preferences.appearance.sidebarOpen())
 
+  // How far closed the docked sidebar is, and how far in its peek has it, undefined while it isn't peeking.
+  const sidebar: { closed: number; peek: number | undefined } = {
+    closed: preferences.appearance.sidebarOpen() ? 0 : 1,
+    peek: undefined,
+  }
+  let peekSurface: HTMLDivElement | undefined
+  let peekHome: HTMLElement | null | undefined
+
+  // The docked sidebar and its peek are one sidebar, shown as far in as whichever has it further.
+  const sidebarHidden = () => (sidebar.peek === undefined ? sidebar.closed : Math.min(sidebar.closed, 1 - sidebar.peek))
+
+  // A peek slides the contents in its own box, where docking slides them by sizing the aside. Reduced motion fades
+  // them in place instead.
+  const paintSidebarContents = () => {
+    const mount = state.tabsMount
+
+    if (!mount) return
+    const peeking = sidebar.peek !== undefined
+    const hidden = sidebarHidden()
+    const fade = peeking && prefersReducedMotion()
+    const rtl = document.documentElement.dir === "rtl"
+    const shift = peeking && !fade && hidden > 0 ? `translateX(${(rtl ? 100 : -100) * hidden}%)` : ""
+    mount.style.opacity = fade ? (hidden === 0 ? "" : `${1 - hidden}`) : panelOpacity(hidden)
+    mount.style.transform = shift
+
+    if (peekSurface) {
+      // Lifted while it floats, and settling as a dock lands; under reduced motion it fades with the contents.
+      peekSurface.style.opacity = peeking ? `${sidebar.closed * (fade ? 1 - hidden : 1)}` : ""
+      peekSurface.style.transform = shift
+    }
+
+    // Without traffic lights, Home starts the sidebar's header right where the collapsed toggle floats over a peek, so
+    // it steps past the toggle until a dock carries the toggle to the header's end.
+    if (peeking && peekHome === undefined)
+      peekHome = mount.querySelector<HTMLElement>('[data-slot="sidebar-header"][data-home] > :first-child')
+
+    if (peekHome)
+      peekHome.style.transform = peeking ? `translateX(${(rtl ? -1 : 1) * homeClearance * sidebar.closed}px)` : ""
+
+    if (!peeking) peekHome = undefined
+  }
+
   const sidebarMotion = createPanelMotion({
     open: preferences.appearance.sidebarOpen,
     // The aside's real width moves main's edge with the sidebar's; its contents keep their width, pinned to that edge.
     paint: (closed) => {
+      sidebar.closed = closed
       const aside = state.tabsAside
 
       if (aside) aside.style.width = `${state.tabsWidth * (1 - closed)}px`
 
       // Dims the contents, background included, as they leave and brightens them as they arrive.
-      if (state.tabsMount) state.tabsMount.style.opacity = panelOpacity(closed)
+      paintSidebarContents()
       paintCollapsedSlots(closed)
     },
-    measure: () => measureSidebarToggles(state.tabsWidth),
-    element: () => state.tabsPanel,
+    measure: () => measureSidebarToggles(state.tabsWidth * sidebarHidden()),
+    // A dock from a peek already shows the sidebar, so reduced motion has nothing to fade in.
+    element: () => (peek.handedOff() ? undefined : state.tabsPanel),
     offset: () => -10,
   })
 
@@ -74,7 +128,13 @@ export default function Layout(props: ParentProps) {
     open: preferences.appearance.sidebarOpen,
     aside: () => state.tabsAside,
     panel: () => state.tabsPanel,
-    content: () => state.tabsMount,
+    paint: (shown) => {
+      sidebar.peek = shown
+      paintSidebarContents()
+    },
+    // James opens the docked panel with its own shift and fade.
+    continues: () => !sidebarMotion.pinned(),
+    whenDocked: sidebarMotion.whenSettled,
   })
 
   replayPanelToggle({ id: "sidebar", label: "Toggle the left sidebar", toggle: toggleSidebar })
@@ -182,6 +242,15 @@ export default function Layout(props: ParentProps) {
                 // Under James the sidebar keeps its landing width (start edge held) while the layout moves.
                 style={{ width: sidebarMotion.pinned() ? `${state.tabsWidth}px` : undefined }}
               >
+                {/* Under a peek's contents, so they dim over the sidebar's own background, as when docking, rather than
+                    showing the content beneath through them. */}
+                <div
+                  ref={peekSurface}
+                  data-slot="vertical-tabs-peek-surface"
+                  aria-hidden="true"
+                  class="pointer-events-none absolute inset-y-0 end-0 bg-v2-background-bg-deep shadow-[var(--v2-elevation-floating)]"
+                  style={{ width: `${state.tabsWidth}px` }}
+                />
                 <div
                   ref={(element) => setState("tabsMount", element)}
                   data-slot="vertical-tabs-mount"

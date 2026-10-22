@@ -29,6 +29,9 @@ const spring = motionTuning.spring("sidebars", {
   },
 })
 
+/** The shared spring, for motion that must read as the sidebar's own, like its peek. */
+export const panelSpring = spring
+
 const style = motionTuning.choice("sidebars.style", {
   label: "Motion",
   group,
