@@ -50,6 +50,11 @@ const glide: Glide = {
   pointerY: 0,
 }
 
+// Knob values aren't signals, so a style change reaches the open card through the tuning subscription.
+motionTuning.subscribe(() => {
+  if (style() !== "cursor") unwatch()
+})
+
 export interface TabPreviewData {
   projectName?: string
   title?: string
@@ -93,7 +98,9 @@ export function TabPreviewPopover(props: {
     on(
       open,
       (now, before) => {
-        if (before && !now && triggerEl && props.orientation === "vertical" && glides()) leave(triggerEl)
+        if (!before || now || !triggerEl) return
+        if (triggerEl === glide.trigger) unwatch()
+        if (props.orientation === "vertical" && glides()) leave(triggerEl)
       },
       { defer: true },
     ),
@@ -242,7 +249,6 @@ function measure() {
 // again and re-clamp the card even if the pointer stays still.
 function watch(trigger: HTMLElement) {
   const refresh = () => {
-    if (style() !== "cursor") return unwatch()
     glide.rects = undefined
     follow()
   }
