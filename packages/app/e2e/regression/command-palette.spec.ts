@@ -60,7 +60,7 @@ test("finds a setting and opens Settings with its row in view and highlighted", 
 
   await input.fill("model")
   await searched
-  const titles = dialog.locator(".command-palette-group-title")
+  const titles = dialog.locator('[data-slot="search-list-header"]')
   await expect(titles.first()).toHaveText("Commands")
   await expect(titles.last()).toHaveText("Settings")
   const options = dialog.getByRole("option")
@@ -148,9 +148,13 @@ test("appends search results without resetting the selected command", async ({ p
   })
   await page.route("**/api/session?*", async (route) => {
     await sessions.promise
+    // Like the server, only a matching title answers, so the session leaves the results for "copy session".
+    const search = new URL(route.request().url()).searchParams.get("search") ?? ""
     await route.fulfill({
       json: {
-        data: [{ ...paletteSession, location: { directory: paletteSession.directory }, title: "Copy fixture" }],
+        data: "copy fixture".includes(search.toLowerCase())
+          ? [{ ...paletteSession, location: { directory: paletteSession.directory }, title: "Copy fixture" }]
+          : [],
       },
     })
   })
@@ -173,6 +177,36 @@ test("appends search results without resetting the selected command", async ({ p
     "true",
   )
   await expect(dialog.getByRole("option", { name: "Copy Project ID", exact: true })).toHaveCount(0)
+})
+
+test("lists matching sessions above commands and jumps between sections with Alt and the arrows", async ({ page }) => {
+  const { dialog, input } = await openCommandPalette(page)
+  await page.route("**/api/session?*", (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            ...paletteSession,
+            id: "ses_palette_copy",
+            location: { directory: paletteSession.directory },
+            title: "Copy fixture",
+          },
+        ],
+      },
+    }),
+  )
+  await input.fill("copy")
+  const session = dialog.getByRole("option", { name: /Copy fixture/ })
+  await expect(session).toHaveAttribute("aria-selected", "true")
+  await expect(dialog.locator('[data-slot="search-list-header"]').first()).toHaveText("Session")
+  const commands = dialog.getByRole("group", { name: "Commands", exact: true }).getByRole("option")
+  await input.press("Alt+ArrowDown")
+  await expect(commands.first()).toHaveAttribute("aria-selected", "true")
+  await input.press("ArrowDown")
+  await input.press("Alt+ArrowUp")
+  await expect(commands.first()).toHaveAttribute("aria-selected", "true")
+  await input.press("Alt+ArrowUp")
+  await expect(session).toHaveAttribute("aria-selected", "true")
 })
 
 test("selects the first session when it arrives above automatically selected files", async ({ page }) => {
@@ -370,7 +404,7 @@ test("keeps matching session and file results steady across keystrokes while sea
   await expect(sessionOption).toBeVisible()
 
   const probe = await page.evaluateHandle(() => {
-    const results = document.querySelector(".command-palette-results")!
+    const results = document.querySelector('[role="dialog"] [data-slot="search-list-scroll"]')!
 
     const state = {
       emptyFrames: 0,
@@ -384,7 +418,10 @@ test("keeps matching session and file results steady across keystrokes while sea
     }
 
     const observer = new MutationObserver(() => {
-      if (results.querySelectorAll('[role="option"]').length === 0 || results.querySelector(".command-palette-state")) {
+      if (
+        results.querySelectorAll('[role="option"]').length === 0 ||
+        results.querySelector('[data-slot="search-list-empty"]')
+      ) {
         state.emptyFrames++
       }
     })

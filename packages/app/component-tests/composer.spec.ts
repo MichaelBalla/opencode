@@ -611,7 +611,7 @@ story("renders a draft once and supports editing, caret restoration, and failure
   await component.locator('[data-action="composer-model"]').click()
   await page
     .getByRole("dialog", { name: "Select model", exact: true })
-    .getByRole("searchbox", { name: "Search models", exact: true })
+    .getByRole("combobox", { name: "Search models", exact: true })
     .press("Escape")
   await expect(input).toBeFocused()
   await input.pressSequentially("!")

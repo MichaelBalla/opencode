@@ -152,7 +152,8 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
     server: ServerConnection.key(serverSDK.server),
     known: createKnownServerSessions(serverCtx),
     projects: serverCtx.projects.list,
-    load: (search, signal) => serverSDK.api.session.list({ parentID: null, search, limit: 50 }, { signal }),
+    load: (search, signal) =>
+      serverSDK.api.session.list({ parentID: null, search, archived: false, limit: 50 }, { signal }),
     get: (sessionID, signal) => serverSDK.api.session.get({ sessionID }, { signal }),
     untitled: () => language.t("command.session.new"),
     category: () => language.t("command.category.session"),
@@ -363,9 +364,7 @@ export function createKnownServerSessions(server: ServerCtx) {
       queryClient.getQueryData<SessionInfo[]>(["home-sessions", ServerConnection.key(server.sdk.server)]) ??
       []
 
-    const merged = new Map(
-      [...cached, ...server.data.session.list()].map((session) => [session.id, session] as const),
-    )
+    const merged = new Map([...cached, ...server.data.session.list()].map((session) => [session.id, session] as const))
 
     return server.data.session.apply(
       [...merged.values()].filter((session) => !session.parentID && !session.time.archived),

@@ -19,8 +19,27 @@ export function matchesCommandPaletteEntry(entry: CommandPaletteEntry, query: st
 
   if (!value) return true
 
-  return [entry.title, entry.description, entry.category, entry.keywords, entry.path, entry.sessionID].some((text) =>
+  // The server matches sessions by title, so their "Session" group name must not match every one of them here.
+  const category = entry.type === "session" ? undefined : entry.category
+
+  return [entry.title, entry.description, category, entry.keywords, entry.path, entry.sessionID].some((text) =>
     text?.toLowerCase().includes(value),
+  )
+}
+
+const typeOrder = { session: 0, command: 1, setting: 2, file: 3 }
+
+/** Search results: sessions lead, those open as tabs first and then the newest, then commands, settings and files. */
+export function rankCommandPaletteEntries(
+  entries: CommandPaletteEntry[],
+  open: (entry: CommandPaletteEntry) => boolean,
+) {
+  return entries.toSorted(
+    (a, b) =>
+      typeOrder[a.type] - typeOrder[b.type] ||
+      (a.type === "session" && b.type === "session"
+        ? Number(open(b)) - Number(open(a)) || (b.updated ?? 0) - (a.updated ?? 0)
+        : 0),
   )
 }
 
@@ -28,6 +47,8 @@ export function createCommandPaletteSearch(props: {
   query: () => string
   items: (query: string) => CommandPaletteEntry[]
   sources: ((query: string, signal: AbortSignal) => Promise<CommandPaletteEntry[]>)[]
+  /** Sessions open as tabs, which lead the matching sessions. */
+  open?: (entry: CommandPaletteEntry) => boolean
 }) {
   const query = createMemo(() => props.query().trim())
   const local = createMemo(() => props.items(query()))
@@ -91,13 +112,7 @@ export function createCommandPaletteSearch(props: {
 
     if (!current) return entries
 
-    const order = { command: 0, setting: 1, session: 2, file: 3 }
-
-    return entries.toSorted(
-      (a, b) =>
-        order[a.type] - order[b.type] ||
-        (a.type === "session" && b.type === "session" ? (b.updated ?? 0) - (a.updated ?? 0) : 0),
-    )
+    return rankCommandPaletteEntries(entries, props.open ?? (() => false))
   })
 
   return {

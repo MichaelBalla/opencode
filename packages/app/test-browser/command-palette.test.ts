@@ -175,4 +175,11 @@ describe("command palette commands", () => {
     expect(matchesCommandPaletteEntry(entry, "Diagnostics")).toBe(true)
     expect(matchesCommandPaletteEntry(entry, "terminal")).toBe(false)
   })
+
+  test("match a session by its title, not by its group name, as the server does", () => {
+    const entry = { id: "session:tabs", type: "session" as const, title: "Fix tabs", category: "Session" }
+
+    expect(matchesCommandPaletteEntry(entry, "tabs")).toBe(true)
+    expect(matchesCommandPaletteEntry(entry, "session")).toBe(false)
+  })
 })

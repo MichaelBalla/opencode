@@ -1,12 +1,9 @@
 import { getDirectory, getFilename } from "@opencode/util/path"
 import { FileIcon } from "@opencode/ui/file-icon"
-import { ScrollView } from "@opencode/ui/scroll-view"
 import { Dialog, DialogBody } from "@opencode/ui/dialog"
-import { Icon } from "@opencode/ui/icon"
 import { Keybind } from "@opencode/ui/keybind"
-import { TextInput } from "@opencode/ui/text-input"
-import { createTypeahead } from "@opencode/ui/typeahead"
-import { createEffect, createMemo, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { SearchHighlight, SearchList, type SearchListRow } from "@opencode/ui/search-list"
+import { createMemo, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { formatKeybindParts } from "@/shell/commands/command"
 import { useLanguage } from "@/runtime/i18n/language"
@@ -70,142 +67,54 @@ export function CommandPaletteView(props: {
   const tabs = useTabs()
   const [store, setStore] = createStore({ query: "" })
 
-  const search = createCommandPaletteSearch({ query: () => store.query, items: props.items, sources: props.sources })
-  const visibleEntries = search.items
-  const entryById = createMemo(() => new Map(visibleEntries().map((entry) => [entry.id, entry] as const)))
-
-  const groupKeys = createMemo<string[]>((prev) => {
-    const next = [...new Set(visibleEntries().map(groupKey))]
-
-    return prev && prev.length === next.length && prev.every((key, index) => key === next[index]) ? prev : next
-  })
-
-  // Follow the first result until the user explicitly chooses a row.
-  const typeahead = createTypeahead<CommandPaletteEntry>({
-    items: visibleEntries,
-    key: (entry) => entry.id,
-    onSelect: props.select,
-    onClose: props.close,
-  })
-
-  const activeEntry = typeahead.activeItem
-
   const openSessions = createMemo(
     () => new Set(tabs.store.flatMap((tab) => (tab.type === "session" ? [`${tab.server}\0${tab.sessionId}`] : []))),
   )
 
-  createEffect(() => {
-    props.highlight(activeEntry())
-  })
+  const sessionOpen = (entry: CommandPaletteEntry) =>
+    !!entry.server && !!entry.sessionID && openSessions().has(`${entry.server}\0${entry.sessionID}`)
 
-  let resultsRef: HTMLDivElement | undefined
-
-  createEffect(() => {
-    // Incoming results can move an explicitly selected row below the viewport.
-    visibleEntries()
-
-    if (!activeEntry()) return
-
-    const frame = requestAnimationFrame(() => {
-      resultsRef?.querySelector("[data-active]")?.scrollIntoView({ block: "nearest" })
-    })
-
-    onCleanup(() => cancelAnimationFrame(frame))
+  const search = createCommandPaletteSearch({
+    query: () => store.query,
+    items: props.items,
+    sources: props.sources,
+    open: sessionOpen,
   })
 
   return (
     <Dialog class="command-palette" size="large">
       <DialogBody class="command-palette-body">
-        <div class="palette-menu-search">
-          <TextInput
-            value={store.query}
-            autofocus
-            autocomplete="off"
-            spellcheck={false}
-            appearance="large"
-            placeholder={props.placeholder}
-            leadingIcon={<Icon name="magnifying-glass" />}
-            role="combobox"
-            aria-expanded="true"
-            aria-controls={typeahead.listID}
-            aria-activedescendant={typeahead.activeID()}
-            onInput={(event) => setStore("query", event.currentTarget.value)}
-            onKeyDown={typeahead.onKeyDown}
-          />
-        </div>
-        <ScrollView class="command-palette-scroll" viewportRef={(el) => (resultsRef = el)}>
-          <div id={typeahead.listID} class="command-palette-results" role="listbox">
-            <Show
-              when={visibleEntries().length > 0}
-              fallback={
-                <div class="command-palette-state">
-                  {search.loading()
-                    ? language.t("common.loading")
-                    : search.failed()
-                      ? language.t("common.requestFailed")
-                      : language.t("palette.empty")}
-                </div>
-              }
-            >
-              <For each={groupKeys()}>
-                {(key) => {
-                  const entries = createMemo(() => visibleEntries().filter((entry) => groupKey(entry) === key))
-                  const category = createMemo(() => entries()[0]?.category ?? "")
-
-                  const ids = createMemo<string[]>((prev) => {
-                    const next = entries().map((entry) => entry.id)
-
-                    return prev && prev.length === next.length && prev.every((id, index) => id === next[index])
-                      ? prev
-                      : next
-                  })
-
-                  return (
-                    <div class="command-palette-group">
-                      <Show when={category()}>
-                        <div class="command-palette-group-title">{category()}</div>
-                      </Show>
-                      <For each={ids()}>
-                        {(id) => {
-                          const item = () => entryById().get(id) ?? entries()[0]!
-
-                          return (
-                            <PaletteRow
-                              id={typeahead.optionID(item())}
-                              item={item()}
-                              active={activeEntry()?.id === id}
-                              language={language}
-                              sessionOpen={
-                                item().server && item().sessionID
-                                  ? openSessions().has(`${item().server}\0${item().sessionID}`)
-                                  : false
-                              }
-                              onActive={() => typeahead.setActive(id)}
-                              onSelect={() => props.select(item())}
-                            />
-                          )
-                        }}
-                      </For>
-                    </div>
-                  )
-                }}
-              </For>
-            </Show>
-          </div>
-        </ScrollView>
+        <SearchList
+          query={store.query}
+          onQuery={(query) => setStore("query", query)}
+          placeholder={props.placeholder}
+          items={search.items()}
+          key={(entry) => entry.id}
+          section={groupKey}
+          header={(entry) => entry.category || undefined}
+          empty={
+            search.loading()
+              ? language.t("common.loading")
+              : search.failed()
+                ? language.t("common.requestFailed")
+                : language.t("palette.empty")
+          }
+          onActive={props.highlight}
+          onSelect={props.select}
+          onClose={props.close}
+        >
+          {(item, row) => <PaletteRow row={row} item={item()} language={language} sessionOpen={sessionOpen(item())} />}
+        </SearchList>
       </DialogBody>
     </Dialog>
   )
 }
 
 function PaletteRow(props: {
-  id: string
+  row: SearchListRow
   item: CommandPaletteEntry
-  active: boolean
   language: ReturnType<typeof useLanguage>
   sessionOpen: boolean
-  onActive: () => void
-  onSelect: () => void
 }) {
   const session = () =>
     props.item.server && props.item.directory && props.item.sessionID
@@ -213,28 +122,18 @@ function PaletteRow(props: {
       : undefined
 
   return (
-    <button
-      id={props.id}
-      type="button"
-      class="command-palette-row palette-menu-row group"
-      role="option"
-      aria-selected={props.active}
-      data-active={props.active ? "" : undefined}
-      onMouseMove={(event) => {
-        // Ignore hover from a static cursor when keyboard scrolling moves rows underneath it.
-        if (event.movementX === 0 && event.movementY === 0) return
-        props.onActive()
-      }}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={props.onSelect}
-    >
+    <button type="button" class="command-palette-row group" {...props.row}>
       <Switch
         fallback={
           <div class="command-palette-row-main">
             <FileIcon node={{ path: props.item.path ?? "", type: "file" }} class="command-palette-row-icon size-4" />
             <div class="command-palette-file-path">
-              <span class="command-palette-file-dir">{getDirectory(props.item.path ?? "")}</span>
-              <span class="command-palette-file-name">{getFilename(props.item.path ?? "")}</span>
+              <span class="command-palette-file-dir">
+                <SearchHighlight text={getDirectory(props.item.path ?? "")} />
+              </span>
+              <span class="command-palette-file-name">
+                <SearchHighlight text={getFilename(props.item.path ?? "")} />
+              </span>
             </div>
           </div>
         }
@@ -242,9 +141,15 @@ function PaletteRow(props: {
         <Match when={props.item.type === "command" || props.item.type === "setting"}>
           <div class="command-palette-row-main">
             <div class="command-palette-row-text">
-              <span class="command-palette-title palette-menu-title">{props.item.title}</span>
+              <span class="command-palette-title palette-menu-title">
+                <SearchHighlight text={props.item.title} />
+              </span>
               <Show when={props.item.description}>
-                <span class="command-palette-description">{props.item.description}</span>
+                {(description) => (
+                  <span class="command-palette-description">
+                    <SearchHighlight text={description()} />
+                  </span>
+                )}
               </Show>
             </div>
           </div>
@@ -278,12 +183,14 @@ function PaletteRow(props: {
                 class="command-palette-title palette-menu-title"
                 classList={{ "opacity-70": !!props.item.archived }}
               >
-                {props.item.title}
+                <SearchHighlight text={props.item.title} />
               </span>
               <Show when={props.item.description}>
-                <span class="command-palette-description" classList={{ "opacity-70": !!props.item.archived }}>
-                  {props.item.description}
-                </span>
+                {(description) => (
+                  <span class="command-palette-description" classList={{ "opacity-70": !!props.item.archived }}>
+                    <SearchHighlight text={description()} />
+                  </span>
+                )}
               </Show>
             </div>
           </div>

@@ -23,7 +23,7 @@ import { Dialog, DialogBody, DialogTitle } from "@opencode/ui/dialog"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
 import { Keybind } from "@opencode/ui/keybind"
-import { ScrollView } from "@opencode/ui/scroll-view"
+import { SearchHighlight, SearchList, type SearchListHandle, type SearchListRow } from "@opencode/ui/search-list"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { TextInput } from "@opencode/ui/text-input"
 import { ModelTooltip } from "./tooltip"
@@ -46,7 +46,6 @@ import {
 import { consoleProviderName } from "@/providers/catalog/console"
 import "@/settings/settings.css"
 import "@/shell/commands/dialog.css"
-import "@/shell/palette-menu.css"
 import "./select-dialog.css"
 
 const MobilePanelDrawer = lazy(async () => {
@@ -561,22 +560,7 @@ function withSections(input: {
 const rowKey = (group: ModelGroup, item: ModelItem) =>
   group.title ? `${group.category}:${modelKey(item)}` : modelKey(item)
 
-// Steps to the next row for a different model, so a section copy never hands the arrow keys to its twin.
-function nextRow(rows: { id: string; item: ModelItem }[], active: string, delta: number) {
-  const start = Math.max(
-    rows.findIndex((row) => row.id === active),
-    0,
-  )
-
-  const model = rows[start] ? modelKey(rows[start].item) : undefined
-
-  return (
-    Array.from(
-      { length: rows.length },
-      (_, step) => rows[(start + (delta + rows.length) * (step + 1)) % rows.length],
-    ).find((row) => modelKey(row.item) !== model)?.id ?? active
-  )
-}
+type ModelRow = { id: string; item: ModelItem; group: ModelGroup }
 
 function createChatgptPlan(current: () => string | undefined) {
   const data = useData()
@@ -629,7 +613,6 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
 
   const [store, setStore] = createStore({
     search: "",
-    active: "",
     flyout: "",
     keyboard: true,
     navigated: false,
@@ -639,7 +622,7 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
 
   const [staged, setStaged] = createStore<Record<string, string | null>>({})
 
-  let container: HTMLElement | undefined
+  let list: SearchListHandle<ModelRow> | undefined
   let flyoutRef: HTMLDivElement | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => clearTimeout(timer))
@@ -660,15 +643,12 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
   })
 
   const rows = createMemo(() =>
-    groups().flatMap((group) => group.items.map((item) => ({ id: rowKey(group, item), item }))),
+    groups().flatMap((group) => group.items.map((item): ModelRow => ({ id: rowKey(group, item), item, group }))),
   )
 
   const rowItem = (id: string) => rows().find((row) => row.id === id)?.item
-  const activeItem = () => rowItem(store.active)
   const flyoutItem = () => (store.flyout ? rowItem(store.flyout) : undefined)
   const variantsOf = (item: ModelItem) => Object.keys(item.variants ?? {})
-
-  setStore("active", rows()[0]?.id ?? "")
 
   const variant = (item: ModelItem) =>
     modelKey(item) in staged ? (staged[modelKey(item)] ?? undefined) : controller.variant(item)
@@ -688,10 +668,7 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
     void dialog.show(() => <DialogConnectProvider directory={location().directory} selection={props.model} />)
   }
 
-  const setSearch = (value: string) => {
-    setStore({ search: value, flyout: "", keyboard: true, navigated: false })
-    setStore("active", rows()[0]?.id ?? "")
-  }
+  const setSearch = (value: string) => setStore({ search: value, flyout: "", keyboard: true, navigated: false })
 
   const triangle = createSafeTriangle({
     flyout: () => (flyoutItem() && flyoutRef?.isConnected ? flyoutRef : undefined),
@@ -706,8 +683,9 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
   }
 
   const hover = (id: string, row: HTMLElement) => {
-    if (store.active === id && !store.keyboard) return
-    setStore({ active: id, keyboard: false })
+    if (list?.active()?.id === id && !store.keyboard) return
+    list?.setActive(id)
+    setStore("keyboard", false)
     clearTimeout(timer)
 
     if (store.warm) {
@@ -743,7 +721,7 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
     createEventListener(document, "pointermove", (event: PointerEvent) => {
       const target = event.target
 
-      if (target instanceof Element && target.closest('[data-slot="model-dialog-row"]')) return
+      if (target instanceof Element && target.closest('[data-slot="search-list-row"]')) return
 
       if (target instanceof Node && flyoutRef?.contains(target)) return
 
@@ -754,45 +732,29 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
   // The flyout is placed once when it opens, so moving the rows under it closes it instead.
   createEventListener(window, "resize", close)
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing) return
-
+  const onKeyDown = (event: KeyboardEvent, active: ModelRow | undefined) => {
     if (matchKeybind(favoriteKeybind, event)) {
-      const item = activeItem()
-
-      if (!item) return
+      if (!active) return
       event.preventDefault()
-      controller.toggleFavorite(item)
+      controller.toggleFavorite(active.item)
       // Unfavoriting removes the Favorites row that was highlighted, so keep the model highlighted in its group.
-      setStore({ flyout: "", keyboard: true, active: rowItem(store.active) ? store.active : modelKey(item) })
+      list?.setActive(rowItem(active.id) ? active.id : modelKey(active.item))
+      setStore({ flyout: "", keyboard: true })
+
+      return
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+      setStore({ keyboard: true, navigated: true, flyout: "" })
 
       return
     }
 
     if (event.metaKey || event.altKey || event.ctrlKey) return
 
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault()
-
-      if (rows().length === 0) return
-      setStore({
-        active: nextRow(rows(), store.active, event.key === "ArrowDown" ? 1 : -1),
-        keyboard: true,
-        navigated: true,
-        flyout: "",
-      })
-      queueMicrotask(() =>
-        container
-          ?.querySelector(`[data-option-key="${CSS.escape(store.active)}"]`)
-          ?.scrollIntoView({ block: "nearest" }),
-      )
-
-      return
-    }
-
     // While searching, left and right edit the query until the arrows have moved through the results.
     if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && (!store.search || store.navigated)) {
-      const item = activeItem()
+      const item = active?.item
 
       if (!item || variantsOf(item).length === 0) return
       event.preventDefault()
@@ -801,64 +763,57 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
       const index = options.indexOf(variant(item))
       setStaged(modelKey(item), options[(index + direction + options.length) % options.length] ?? null)
       setStore({ keyboard: true, flyout: "" })
-
-      return
     }
-
-    if (event.key !== "Enter") return
-    const item = activeItem()
-
-    if (!item) return
-    event.preventDefault()
-    choose(item)
   }
 
-  const Row = (row: { id: string; item: ModelItem; section: boolean }) => {
-    const selected = () => controller.current() === modelKey(row.item)
-    const active = () => store.active === row.id
+  const Row = (row: { model: ModelRow; attrs: SearchListRow }) => {
+    const item = () => row.model.item
+    const selected = () => controller.current() === modelKey(item())
+    const active = () => row.attrs["data-active"] !== undefined
 
     return (
       <button
         type="button"
-        data-slot="model-dialog-row"
-        data-option-key={row.id}
-        data-active={active() ? "" : undefined}
-        aria-pressed={selected()}
-        onMouseMove={(event) => move(row.id, event)}
+        {...row.attrs}
+        data-size="compact"
+        data-option-key={row.model.id}
+        aria-current={selected() ? "true" : undefined}
+        onMouseMove={(event) => move(row.model.id, event)}
         onMouseLeave={(event) => {
           clearTimeout(timer)
           const target = event.relatedTarget
 
-          if (target instanceof Element && target.closest('[data-slot="model-dialog-row"]')) return
+          if (target instanceof Element && target.closest('[data-slot="search-list-row"]')) return
 
           if (target instanceof Node && flyoutRef?.contains(target)) return
 
           if (flyoutItem() && triangle.contains({ x: event.clientX, y: event.clientY })) return
           close()
         }}
-        onClick={() => choose(row.item)}
       >
         <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span class="min-w-0 truncate">{row.item.name}</span>
-          <Show when={row.section}>
-            <span class="min-w-0 shrink-[999] truncate text-v2-text-text-faint">{labels.name(row.item.provider)}</span>
+          <span class="min-w-0 truncate">
+            <SearchHighlight text={item().name} />
+          </span>
+          <Show when={row.model.group.title}>
+            <span class="min-w-0 shrink-[999] truncate text-v2-text-text-faint">{labels.name(item().provider)}</span>
           </Show>
         </span>
-        <Show when={isFreeModel(row.item)}>
+        <Show when={isFreeModel(item())}>
           <Badge class="shrink-0">{language.t("model.tag.free")}</Badge>
         </Show>
-        <Show when={row.item.latest}>
+        <Show when={item().latest}>
           <Badge class="shrink-0">{language.t("model.tag.latest")}</Badge>
         </Show>
         {/* The slot keeps its width while hidden, so hovering a row never shifts it. The selected row shows only an explicit variant. */}
-        <Show when={variantsOf(row.item).length > 0}>
+        <Show when={variantsOf(item()).length > 0}>
           <span
             data-slot="model-dialog-variant"
-            data-default={variant(row.item) ? undefined : ""}
+            data-default={variant(item()) ? undefined : ""}
             class="w-[72px] shrink-0 truncate text-end capitalize"
-            classList={{ invisible: !active() && !(selected() && variant(row.item)) }}
+            classList={{ invisible: !active() && !(selected() && variant(item())) }}
           >
-            {variant(row.item) ?? language.t("common.default")}
+            {variant(item()) ?? language.t("common.default")}
           </span>
         </Show>
         <span class="flex size-4 shrink-0 items-center justify-center">
@@ -876,21 +831,13 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
         <DialogTitle>{language.t("dialog.model.select.title")}</DialogTitle>
       </div>
       <DialogBody class="command-palette-body">
-        <div class="palette-menu-search">
-          <TextInput
-            type="search"
-            appearance="large"
-            value={store.search}
-            autofocus
+        {/* Scrolling moves the flyout's row away without a pointer event, which would leave it detached. */}
+        <div class="contents" ref={(element) => createEventListener(element, "scroll", close, { capture: true })}>
+          <SearchList
+            ref={(handle) => (list = handle)}
+            query={store.search}
+            onQuery={setSearch}
             placeholder={language.t("dialog.model.search.placeholder")}
-            aria-label={language.t("dialog.model.search.placeholder")}
-            spellcheck={false}
-            autocorrect="off"
-            autocomplete="off"
-            autocapitalize="off"
-            leadingIcon={<Icon name="magnifying-glass" />}
-            onInput={(event) => setSearch(event.currentTarget.value)}
-            onKeyDown={onKeyDown}
             trailing={
               <>
                 <Show when={store.search.trim()}>
@@ -927,49 +874,33 @@ export function DialogSelectModel(props: { provider?: string; model?: ModelState
                 </Tooltip>
               </>
             }
-          />
+            items={rows()}
+            key={(row) => row.id}
+            section={(row) => row.group.category}
+            same={(a, b) => modelKey(a.item) === modelKey(b.item)}
+            header={(row) => (
+              <Show
+                when={row.group.title}
+                fallback={
+                  <>
+                    <ProviderModelIcon provider={row.item.provider} class="!size-3.5 shrink-0" />
+                    <span class="min-w-0 truncate">{labels.name(row.item.provider)}</span>
+                    <Show when={labels.workspace(row.item.provider)}>
+                      {(workspace) => <Badge class="shrink-0">{workspace()}</Badge>}
+                    </Show>
+                  </>
+                }
+              >
+                {(title) => <span class="min-w-0 truncate">{title()}</span>}
+              </Show>
+            )}
+            empty={language.t("dialog.model.empty")}
+            onSelect={(row) => choose(row.item)}
+            onKeyDown={onKeyDown}
+          >
+            {(row, attrs) => <Row model={row()} attrs={attrs} />}
+          </SearchList>
         </div>
-        <ScrollView
-          class="command-palette-scroll"
-          viewportRef={(element) => {
-            container = element
-            // Scrolling moves the flyout's row away without a pointer event, which would leave it detached.
-            createEventListener(element, "scroll", close)
-          }}
-        >
-          <div data-slot="model-dialog-results">
-            <Show
-              when={models().length > 0}
-              fallback={<div class="command-palette-state">{language.t("dialog.model.empty")}</div>}
-            >
-              <For each={groups()}>
-                {(group) => (
-                  <div data-slot="model-dialog-group">
-                    <div data-slot="model-dialog-group-title">
-                      <Show
-                        when={group.title}
-                        fallback={
-                          <>
-                            <ProviderModelIcon provider={group.items[0].provider} class="!size-3.5 shrink-0" />
-                            <span class="min-w-0 truncate">{labels.name(group.items[0].provider)}</span>
-                            <Show when={labels.workspace(group.items[0].provider)}>
-                              {(workspace) => <Badge class="shrink-0">{workspace()}</Badge>}
-                            </Show>
-                          </>
-                        }
-                      >
-                        {(title) => <span class="min-w-0 truncate">{title()}</span>}
-                      </Show>
-                    </div>
-                    <For each={group.items}>
-                      {(item) => <Row id={rowKey(group, item)} item={item} section={!!group.title} />}
-                    </For>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </div>
-        </ScrollView>
         <Show when={chatgptPlan()}>
           <ChatgptPlanFooter />
         </Show>

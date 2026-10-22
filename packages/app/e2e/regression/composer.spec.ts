@@ -331,7 +331,7 @@ test("a catalog refresh cannot replace an existing session's model", async ({ pa
   await control.click()
   await page
     .getByRole("dialog", { name: "Select model" })
-    .getByRole("button", { name: "Beta Free", exact: true })
+    .getByRole("option", { name: "Beta Free", exact: true })
     .click()
   await expect(control).toHaveText("OpenCode / Beta")
   await view.editor.fill("Use the replacement I chose")
@@ -765,7 +765,7 @@ test("keeps a narrow session composer contained when invoking a built-in", async
   await page.locator('[data-suggestion-id="model.choose"]').click()
 
   const dialog = page.getByRole("dialog", { name: "Select model", exact: true })
-  const search = dialog.getByRole("searchbox", { name: "Search models", exact: true })
+  const search = dialog.getByRole("combobox", { name: "Search models", exact: true })
   await expect(search).toBeFocused()
   await expect(editor).toHaveText("keep me")
   await page.keyboard.press("Escape")
@@ -795,7 +795,7 @@ test("keeps focus in a dialog that replaces the model dialog and returns it to t
   await page.locator('[data-component="composer"] [data-action="composer-model"]').click()
 
   const models = page.getByRole("dialog", { name: "Select model", exact: true })
-  await expect(models.getByRole("searchbox", { name: "Search models", exact: true })).toBeFocused()
+  await expect(models.getByRole("combobox", { name: "Search models", exact: true })).toBeFocused()
   await models.getByRole("button", { name: "Manage models", exact: true }).click()
   await expect(models).toBeHidden()
 
@@ -924,8 +924,8 @@ test("marks a Console provider with its workspace only when it is also connected
   await expect(details.getByText(/Anomaly \//)).toHaveCount(0)
   await trigger.click()
   const menu = page.getByRole("dialog", { name: "Select model", exact: true })
-  await expect(menu.getByRole("button", { name: "Direct Gemini", exact: true })).toBeVisible()
-  const headings = menu.locator('[data-slot="model-dialog-group-title"]')
+  await expect(menu.getByRole("option", { name: "Direct Gemini", exact: true })).toBeVisible()
+  const headings = menu.locator('[data-slot="search-list-header"]')
   await expect(headings).toHaveCount(4)
   await expect(headings.filter({ hasText: /^GoogleAnomaly$/ })).toHaveCount(1)
   await expect(headings.filter({ hasText: /^Google$/ })).toHaveCount(1)

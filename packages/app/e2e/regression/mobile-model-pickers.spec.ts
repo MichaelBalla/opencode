@@ -129,7 +129,7 @@ for (const direction of ["ltr", "rtl"] as const) {
     await expect(variant).toHaveText("high")
     await expect(model).toHaveAttribute("data-control-type", "dialog")
     await model.click()
-    await expect(dialog.getByRole("searchbox", { name: "Search models", exact: true })).toBeFocused()
+    await expect(dialog.getByRole("combobox", { name: "Search models", exact: true })).toBeFocused()
     await expect(page.getByRole("menu")).toHaveCount(0)
     await dialog.locator('[data-option-key="opencode:mobile-b"]').click()
     await expect(dialog).toBeHidden()
@@ -158,7 +158,7 @@ for (const direction of ["ltr", "rtl"] as const) {
 
   test(`model dialog arrow keys stage a variant in ${direction}`, async ({ page }) => {
     const { composer, model, variant, dialog } = await openDesktopPicker(page, direction)
-    const search = dialog.getByRole("searchbox", { name: "Search models", exact: true })
+    const search = dialog.getByRole("combobox", { name: "Search models", exact: true })
     const rowA = dialog.locator('[data-option-key="opencode:mobile-a"]')
     const next = direction === "rtl" ? "ArrowLeft" : "ArrowRight"
     await model.click()
@@ -190,7 +190,7 @@ for (const direction of ["ltr", "rtl"] as const) {
     const prompt = composer.getByRole("textbox", { name: "Prompt", exact: true })
     await prompt.fill("keep me")
     await prompt.press("ControlOrMeta+Quote")
-    const search = dialog.getByRole("searchbox", { name: "Search models", exact: true })
+    const search = dialog.getByRole("combobox", { name: "Search models", exact: true })
     await expect(search).toBeFocused()
     await search.press(direction === "rtl" ? "ArrowLeft" : "ArrowRight")
     await expect(dialog.locator('[data-option-key="opencode:mobile-a"]')).toContainText("high")
@@ -226,8 +226,8 @@ test("model dialog toggles a favorite from the keyboard and leads with favorite 
   page,
 }) => {
   const { model, dialog } = await openDesktopPicker(page, "ltr")
-  const sections = dialog.locator('[data-slot="model-dialog-group-title"]')
-  const search = dialog.getByRole("searchbox", { name: "Search models", exact: true })
+  const sections = dialog.locator('[data-slot="search-list-header"]')
+  const search = dialog.getByRole("combobox", { name: "Search models", exact: true })
   await model.click()
   await expect(sections).toHaveText(["OpenCode"])
   await search.press("ArrowDown")
@@ -240,7 +240,7 @@ test("model dialog toggles a favorite from the keyboard and leads with favorite 
 
   await model.click()
   await expect(sections).toHaveText(["Favorites", "Recent", "OpenCode"])
-  await expect(dialog.locator('[data-option-key="recent:opencode:mobile-b"]')).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.locator('[data-option-key="recent:opencode:mobile-b"]')).toHaveAttribute("aria-current", "true")
   await search.fill("Mobile")
   await expect(sections).toHaveText(["OpenCode"])
   await search.press("Escape")
@@ -258,7 +258,7 @@ test("model dialog toggles a favorite from the keyboard and leads with favorite 
 test("model dialog opens Manage models from its search row with Enter", async ({ page }) => {
   const { model, dialog } = await openDesktopPicker(page, "ltr")
   await model.click()
-  await expect(dialog.getByRole("searchbox", { name: "Search models", exact: true })).toBeFocused()
+  await expect(dialog.getByRole("combobox", { name: "Search models", exact: true })).toBeFocused()
   const manage = dialog.getByRole("button", { name: "Manage models", exact: true })
   await manage.focus()
   await manage.press("Enter")
