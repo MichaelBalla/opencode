@@ -403,6 +403,20 @@ export function ImagePreview(props: ImagePreviewProps) {
   const hideOrigin = () => home()?.setAttribute("data-image-preview-origin", "")
   const showOrigin = () => home()?.removeAttribute("data-image-preview-origin")
 
+  // Moving through a gallery changes the origin while the preview stays open. Hand the hidden state to the image being
+  // shown so the first thumbnail is visible again, and closing restores the current one.
+  createEffect(
+    on(
+      () => props.origin,
+      (next, prev) => {
+        if (!prev || prev === next) return
+
+        prev.removeAttribute("data-image-preview-origin")
+        next?.setAttribute("data-image-preview-origin", "")
+      },
+    ),
+  )
+
   onCleanup(() => {
     stop?.()
     settle()
